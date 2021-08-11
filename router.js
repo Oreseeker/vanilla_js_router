@@ -12,12 +12,13 @@ function openRouteComponent(path, data) {
 	   сохраненным результатом */
 	let routeTree = (() => {
 		const hashedRoute = this.hashedRoutes[path];
-		if (hashedRoute) {
+		if (false/*hashedRoute*/) {
 			console.log(`Extracting hashed route`);
 			return this.hashedRoutes[path];
 		}
 		return this.getRouteTree(path, this.routes);
 	})();
+	console.log(`routeTree`, routeTree);
 
 	/* Если нашелся маршрут, то сохраняем его дерево на случай,
 	   если мы захотим еще раз перейти на тот же маршрут.
@@ -26,22 +27,58 @@ function openRouteComponent(path, data) {
 	this.hashedRoutes[path] = routeTree;
 
 	const lastRouteIndex = routeTree.length - 1;
-	let containerEl = this.baseApp.routerViewEl;
+	const baseAppRouterViewEl = this.baseApp.shadowRoot.querySelector('.router-view');
+	let containerEl = baseAppRouterViewEl;
 	routeTree.forEach((rt, index) => {
 		this.clear(containerEl);
 		const componentTitle = rt.component;
 		const componentEl = document.createElement(componentTitle);
 		containerEl.append(componentEl);
 
-		containerEl = componentEl.routerViewEl;
+		containerEl = componentEl.shadowRoot.querySelector('.router-view');;
 
 		/* data присваивается конечному роуту в случае, если задана */
 		if (index !== lastRouteIndex) return;
-		if (data) {
-			const dataKeys = Object.keys(data);
-			dataKeys.forEach(key => componentEl.key = data[key]);
+		const matchedRoutePath = this.matchedRoute.path;
+		const routeParams = this.getPathParams(path, matchedRoutePath);
+		console.log(`routeParams`, routeParams);
+		const newData = { ...data, ...routeParams };
+		console.log(`newData`, newData);
+		const dataKeys = Object.keys(newData);
+		dataKeys.forEach(key => componentEl[key] = newData[key]);
+	});
+}
+
+function getPathSegments(path) {
+	return path.split('/').slice(1);
+}
+
+function comparePathWithRoutePath(requestedPath, routePath) {
+	const requestedPathSegments = getPathSegments(requestedPath);
+	const routePathSegments = getPathSegments(routePath);
+	if (requestedPathSegments.length !== routePathSegments.length) return false;
+	for (let i = 0; i < routePathSegments.length; i ++) {
+		const routePathSegmentStartsWithColumn = routePathSegments[i][0] === ':';
+		if (requestedPathSegments[i] !== routePathSegments[i] && !routePathSegmentStartsWithColumn) return false;
+	}
+	return true;
+}
+
+function getPathParams(requestedPath, correspondingRoutePath) {
+	const params = {};
+	const routePathSegments = this.getPathSegments(correspondingRoutePath);
+	const requestedPathSegments = this.getPathSegments(requestedPath);
+	if (routePathSegments.length !== requestedPathSegments.length) {
+		throw new Error('Paths given have different number of segments.');
+	}
+	routePathSegments.forEach((routePathSegment, index) => {
+		if (routePathSegment[0] === ':') {
+			const paramName = routePathSegment.slice(1);
+			const paramValue = requestedPathSegments[index];
+			params[paramName] = paramValue;
 		}
 	});
+	return params;
 }
 
 function getRouteTree(path, routes) {
@@ -55,10 +92,10 @@ function getRouteTree(path, routes) {
 		for (let i = 0; i < rts.length; i++) {
 			if (isFound) break;
 			currentSearchPath.push(rts[i]);
-			if (rts[i].path === pth) {
-				isFound = true;
-				break;
-			}
+			isFound = this.comparePathWithRoutePath(pth, rts[i].path);
+			this.matchedRoute = rts[i];
+			if (isFound) break;
+
 			const hasChildren = rts[i].children && rts[i].children.length;
 			if (hasChildren) {
 				scanRouteTree(path, rts[i].children);
@@ -80,13 +117,16 @@ function to(path, title, data) {
 function Router(routes) {
 	/* Функция-конструктор. Принимает в качестве аргументов
 	   routes - конфигурация раутов для Web-приложения */
-	console.log(`routes`, routes);
-	this.routes = routes;
+	this.routes = [...routes];
 	this.currentPath = '/';
 	this.previousPath = null;
+	this.matchedRoute = null;
 	this.hashedRoutes = {};
 	this.getRouteTree = getRouteTree.bind(this);
 	this.clear = clear.bind(this);
+	this.getPathSegments = getPathSegments.bind(this);
+	this.comparePathWithRoutePath = comparePathWithRoutePath.bind(this);
+	this.getPathParams = getPathParams.bind(this);
 	this.to = to.bind(this);
 	this.openRouteComponent = openRouteComponent.bind(this);
 }
@@ -100,7 +140,7 @@ const routes = [
 	{
 		path: '/catalog',
 		component: 'w-catalog',
-		title: 'Catalog'
+		title: 'Catalog',
 	},
 	{
 		path: '/about-us',
@@ -113,7 +153,7 @@ const routes = [
 		title: 'Feedback'
 	},
 	{
-		path: '/catalog/:id:/',
+		path: '/catalog/:productId',
 		component: 'w-product',
 		title: 'Product'
 	}
